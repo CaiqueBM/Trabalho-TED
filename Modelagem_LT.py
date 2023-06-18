@@ -16,7 +16,14 @@ df_entrada = pd.DataFrame(columns=['potencia_ativa',
                                    'rendimento_minimo',
                                    'pressao_atm',
                                    'temperatura_ambiente'])
-df_resultados = pd.DataFrame(columns=['cabo', 'bitola', 'numero_circuitos', 'quantidade_subcondutores', 'distancia_subcondutores'])
+df_resultados = pd.DataFrame(columns=['cabo', 'bitola', 'numero_circuitos', 'quantidade_subcondutores', 'distancia_subcondutores', 'disposicao_condutores'])
+
+
+def resultado_modelagem():
+    # Passar lendo todos os resultados do dataframe e buscar a melhor combinaçao de resultados 
+    for row in df_resultados:
+        print()
+
 
 def calculo_modelagem(quanti_subcondutores, dist_subcondutores):
     global df_info
@@ -30,7 +37,6 @@ def calculo_modelagem(quanti_subcondutores, dist_subcondutores):
     pressao_atm = float(df_entrada.iloc[0]['pressao_atm'])
     temperatura_ambiente = float(df_entrada.iloc[0]['temperatura_ambiente'])
     frequencia = float(df_entrada.iloc[0]['frequencia'])
-    
     temp = 228
     E_0 = 8.854187817 * pow(10, -12)
     w = 2 * math.pi * frequencia
@@ -43,10 +49,11 @@ def verificar_campos():
     global df_info
     global df_resultados
     global df_entrada    
-    tensoes_padroes = [6, 11.4, 34.5, 69, 88, 138, 230, 345, 440, 500, 600, 750, 1100]
+    tensoes_padroes = [6, 11.4, 13.8, 34.5, 69, 88, 138, 230, 345, 440, 500, 600, 750, 1100] #kV
     condicao = False
     valor_df = 0
-    valores = [potencia_ativa_entry.get(),
+    valores = [
+            potencia_ativa_entry.get(),
             fator_potencia_entry.get(),
             comprimento_entry.get(),
             previsao_aumento_carga_entry.get(),
@@ -108,19 +115,13 @@ def verificar_campos():
                 bitola = row.iloc[2]
 
 
-                df_resultados.loc[valor_df, 'cabo'] = nome_cabo
-                df_resultados.loc[valor_df, 'bitola'] = bitola
-
-                #Numero de circuito é igual a 1
-                df_resultados.loc[valor_df, 'numero_circuitos'] = "1"
-
                 # Linhas acima de 230 kV utilizam condutores geminados
                 if tensao_otima >= 230:
                     #Quantidade de subcondutores
                     for quant_subcondutores in range(1, 5):
                         # Verificar se a corrente sera suportada
                         if (int(corrente_polar[0]) / quant_subcondutores) <= corrente_max: 
-                            df_resultados.loc[valor_df, 'quantidade_subcondutores'] = quant_subcondutores
+                            
                             
                             #Distancia de segurança entre subcondutores(Varia 10 a 30 x o diametro)
                             #2, 3 ou 4 subcondutores por fase
@@ -130,18 +131,30 @@ def verificar_campos():
                             and quant_subcondutores == 4
                             ):
                                 for dist in range(10,31):
+                                    df_resultados.loc[valor_df, 'cabo'] = nome_cabo
+                                    df_resultados.loc[valor_df, 'bitola'] = bitola
+                                    df_resultados.loc[valor_df, 'quantidade_subcondutores'] = quant_subcondutores
+                                    #Numero de circuito é igual a 1
+                                    df_resultados.loc[valor_df, 'numero_circuitos'] = "1"
                                     dist_subcondutores = dist
                                     df_resultados.loc[valor_df, 'distancia_subcondutores'] = dist_subcondutores
+                                    df_resultados.loc[valor_df, 'disposicao_condutores'] = "Disposiçao horizontal"
                                     calculo_modelagem(quant_subcondutores, dist_subcondutores)
 
                 #Tensao otima abaixo de 230 kV, apenas 1 condutor por fase
                 else:
+                    df_resultados.loc[valor_df, 'cabo'] = nome_cabo
+                    df_resultados.loc[valor_df, 'bitola'] = bitola
                     #Numero de circuito é igual a 1
                     df_resultados.loc[valor_df, 'numero_circuitos'] = "1"
                     #Quantidade de subcondutores igual a 1
                     df_resultados.loc[valor_df, 'quantidade_subcondutores'] = "1"
                     #Distancia de segurança igual a 0
                     df_resultados.loc[valor_df, 'distancia_subcondutores'] = "0"
+                    if tensao_otima < 69:
+                        df_resultados.loc[valor_df, 'disposicao_condutores'] = "Disposiçao em triangulo"
+                    else:
+                        df_resultados.loc[valor_df, 'disposicao_condutores'] = "Disposiçao vertical"
                     calculo_modelagem(1, 0)
 
 
