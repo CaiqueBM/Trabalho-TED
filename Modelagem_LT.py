@@ -17,18 +17,21 @@ df_entrada = pd.DataFrame(columns=['potencia_ativa',
                                    'pressao_atm',
                                    'temperatura_ambiente'])
 df_resultados = pd.DataFrame(columns=['cabo', 'bitola', 'numero_circuitos', 'quantidade_subcondutores', 'distancia_subcondutores', 'disposicao_condutores'])
-
+valor_df = 0
 
 def resultado_modelagem():
     # Passar lendo todos os resultados do dataframe e buscar a melhor combinaçao de resultados 
+    global df_resultados
     for row in df_resultados:
         print()
 
 
-def calculo_modelagem(quanti_subcondutores, dist_subcondutores):
+def calculo_modelagem(nome_cabo, tensao_otima, corrente_polar, quant_subcondutores, dist_subcondutores):
     global df_info
     global df_resultados
     global df_entrada
+    global valor_df
+
     percentual_carga_leve = float(df_entrada.iloc[0]['percentual_carga_leve'])/100
     T_aux = float(df_entrada.iloc[0]['T_aux'])
     perda_corona_max = float(df_entrada.iloc[0]['perda_corona_max'])
@@ -40,9 +43,88 @@ def calculo_modelagem(quanti_subcondutores, dist_subcondutores):
     temp = 228
     E_0 = 8.854187817 * pow(10, -12)
     w = 2 * math.pi * frequencia
+
+    linha_atual = df_info.loc[df_info['Nome'] == nome_cabo]
+    diametro_ext = linha_atual.iloc['diametro_condutor']
+    raio_medio_geo = linha_atual.iloc['raio_medio']
+
+    if tensao_otima >= 230:
+        # Calculo da distancia horizontal - de acordo com a norma ABNT 5422
+        distancia_horizontal_min = 0.22 + 0.01 * tensao_otima
+        distancia_horizontal_max = (
+            0.37 * math.sqrt(frequencia) + 0.0076 * tensao_otima
+        )
+        if distancia_horizontal_min > distancia_horizontal_max:
+            distancia_horizontal = distancia_horizontal_min
+        else:
+            distancia_horizontal = distancia_horizontal_max
+        df_resultados.loc[valor_df, 6] = distancia_horizontal
+    elif tensao_otima >= 69:
+        # Calculo da distancia vertical - de acordo com a norma ABNT 5422
+        distancia_vertical_min = 1
+        distancia_vertical_max = (
+            0.5 + 0.01 * tensao_otima
+        )
+        if distancia_vertical_min > distancia_vertical_max:
+            distancia_vertical = distancia_vertical_min
+        else:
+            distancia_vertical = distancia_vertical_max
+        df_resultados.loc[valor_df, 6] = distancia_vertical
+    else:
+        # Calculo da distancia triangular
+        distancia_triangular_min = 1
+        distancia_triangular_max = (
+            0.5 + 0.01 * tensao_otima
+        )
+        if distancia_vertical_min > distancia_triangular_max:
+            distancia_triangular = distancia_triangular_min
+        else:
+            distancia_triangular = distancia_triangular_max
+        df_resultados.loc[valor_df, 6] = distancia_triangular
     
+    dmg = (
+        distancia_horizontal
+        * distancia_horizontal
+        * 2
+        * distancia_horizontal
+    ) ** (1/3)
+
     
-    
+    raio = diametro_ext / 2
+    #rmg = raio
+
+    # Calculo da Resistencia Serie (Rs)
+    if T_aux > 37.5:
+        T_2 = T_aux
+        T_1 = 50
+        resistencia_cabos = linha_atual[' res50_60']
+        resistencia = ((temp + T_2) * resistencia_cabos) / (
+        temp + T_1
+        )
+
+    elif T_aux <= 37.5:
+        T_2 = T_aux
+        T_1 = 25
+        resistencia_cabos = linha_atual[' res25_60']
+        resistencia = ((temp + T_1) * resistencia_cabos) / (
+        temp + T_2
+        )
+    df_resultados.loc[valor_df, 7] = resistencia
+
+    if quant_subcondutores == 1:
+        indutancia = 2 * pow(10,-7) * math.ln(dmg/raio_medio_geo)
+    elif quant_subcondutores == 2:
+        ds = math.sqrt(raio_medio_geo * dist_subcondutores)
+        indutancia = 2 * pow(10,-7) * math.log1p(dmg/ds)
+    elif quant_subcondutores == 3:
+        ds = pow(raio_medio_geo * pow(dist_subcondutores,2),3)
+        indutancia = 2 * pow(10,-7) * math.log1p(dmg/ds)
+    elif quant_subcondutores == 4:
+        ds = math.sqrt(raio_medio_geo * dist_subcondutores)
+        indutancia = 2 * pow(10,-7) * math.log1p(dmg/ds)
+
+    return
+
 
 
 def verificar_campos():
@@ -98,7 +180,6 @@ def verificar_campos():
         tensao_otima = min(tensoes_padroes, key=lambda x: abs(x - tensao_otima))
 
         # Calculo da corrente
-
         corrente_rect = (
             (potencia_corrigida / 1000)
             / (math.sqrt(3) * tensao_otima * fator_potencia)
@@ -113,7 +194,6 @@ def verificar_campos():
                 nome_cabo = row.iloc[0]
                 # bitola do condutor
                 bitola = row.iloc[2]
-
 
                 # Linhas acima de 230 kV utilizam condutores geminados
                 if tensao_otima >= 230:
@@ -139,7 +219,7 @@ def verificar_campos():
                                     dist_subcondutores = dist
                                     df_resultados.loc[valor_df, 'distancia_subcondutores'] = dist_subcondutores
                                     df_resultados.loc[valor_df, 'disposicao_condutores'] = "Disposiçao horizontal"
-                                    calculo_modelagem(quant_subcondutores, dist_subcondutores)
+                                    calculo_modelagem(nome_cabo, quant_subcondutores, dist_subcondutores, tensao_otima, corrente_polar)
 
                 #Tensao otima abaixo de 230 kV, apenas 1 condutor por fase
                 else:
@@ -155,10 +235,10 @@ def verificar_campos():
                         df_resultados.loc[valor_df, 'disposicao_condutores'] = "Disposiçao em triangulo"
                     else:
                         df_resultados.loc[valor_df, 'disposicao_condutores'] = "Disposiçao vertical"
-                    calculo_modelagem(1, 0)
+                    calculo_modelagem(1, 0, tensao_otima, corrente_polar)
 
 
-                valor_df += 1
+                
 
             """resposta_texto = "Tensao otima: " + str(tensao_otima) + " kV" + "\n"
             resposta_texto += (
