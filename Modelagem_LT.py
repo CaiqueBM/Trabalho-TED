@@ -2,8 +2,31 @@ import tkinter as tk
 import pandas as pd
 import math
 import cmath
+import csv
 
-df_info = pd.read_csv("cabos.csv")
+"""df_info = pd.DataFrame(columns=[
+        "nome",
+        "mcm",
+        "seccao",
+        "diametro_condutor",
+        "raio_medio",
+        "res25cc",
+        "res2550",
+        "res2560",
+        "res50cc",
+        "res5050",
+        "res5060",
+        "corrente_maxima",
+        ])"""
+
+with open('cabos.csv', 'r') as arquivo_csv:
+    # Crie um objeto leitor do CSV
+    leitor_csv = csv.reader(arquivo_csv)
+    linhas_csv = list(leitor_csv)
+
+# Crie um DataFrame a partir das linhas do CSV
+df_info = pd.DataFrame(linhas_csv[1:], columns=linhas_csv[0])
+
 df_entrada = pd.DataFrame(
     columns=[
         "potencia_ativa",
@@ -41,7 +64,7 @@ def resultado_modelagem():
 
 
 def calculo_modelagem(
-    nome_cabo, bitola, quant_subcondutores, dist_subcondutores, quant_circuitos, tensao_otima, corrente_polar, potencia_corrigida
+    nome_cabo, bitola, quant_subcondutores, dist_subcondutores, quant_circuitos, tensao_otima, corrente_polar, potencia_corrigida, index
 ):
     global df_info
     global df_resultados
@@ -66,12 +89,12 @@ def calculo_modelagem(
     resistencia = 0
     indutancia = 0
     capacitancia = 0
-    distancia_horizontal = 0
     distancia_entre_fases = 0
+    disposicao_condutores=""
 
     linha_atual = df_info.loc[df_info["nome"] == nome_cabo]
-    diametro_ext = linha_atual.loc[0, "diametro_condutor"]
-    raio_medio_geo = linha_atual.loc[0, "raio_medio"]
+    diametro_ext = float(linha_atual.loc[index, "diametro_condutor"])
+    raio_medio_geo = float(linha_atual.loc[index, "raio_medio"])
 
     if tensao_otima >= 230:
         # Calculo da distancia horizontal - de acordo com a norma ABNT 5422
@@ -83,10 +106,6 @@ def calculo_modelagem(
             distancia_entre_fases = distancia_horizontal_max
         disposicao_condutores = "Horizontal"
         
-
-
-        
-
     elif tensao_otima >= 69:
         # Calculo da distancia vertical - de acordo com a norma ABNT 5422
         distancia_vertical_min = 1
@@ -96,6 +115,7 @@ def calculo_modelagem(
         else:
             distancia_entre_fases = distancia_vertical_max
         df_resultados.loc[valor_df, 6] = distancia_entre_fases
+        disposicao_condutores = "Vertical"
 
     else:
         # Calculo da distancia triangular
@@ -106,26 +126,27 @@ def calculo_modelagem(
         else:
             distancia_entre_fases = distancia_triangular_max
         df_resultados.loc[valor_df, 6] = distancia_entre_fases
+        disposicao_condutores = "Triangular"
 
     dmg = (
             distancia_entre_fases * distancia_entre_fases * 2 * distancia_entre_fases
         ) ** (1 / 3)
 
-    raio = diametro_ext / 2
+    raio = (float(diametro_ext) * (10 ** (-3))) / 2
     # rmg = raio
 
     # Calculo da Resistencia Serie (Rs)
     if T_aux > 37.5:
         T_2 = T_aux
         T_1 = 50
-        resistencia_cabos = linha_atual.loc[0, "res5060"]
-        resistencia = ((temp + T_2) * resistencia_cabos) / (temp + T_1)
+        resistencia_cabos = linha_atual.loc[index, "res5060"]
+        resistencia = ((temp + T_2) * float(resistencia_cabos)) / (temp + T_1)
 
     elif T_aux <= 37.5:
         T_2 = T_aux
         T_1 = 25
-        resistencia_cabos = linha_atual.loc[0, "res2560"]
-        resistencia = ((temp + T_1) * resistencia_cabos) / (temp + T_2)
+        resistencia_cabos = linha_atual.loc[index, "res2560"]
+        resistencia = ((temp + T_1) * float(resistencia_cabos)) / (temp + T_2)
 
     rmg = raio
     # Calculo da Indutancia
@@ -236,27 +257,34 @@ def calculo_modelagem(
             if frequencia >= 25 and frequencia <= 120 and raio > 0.25 and (tensao_otima/vo) > 1.8:
                 perda_corona = (241 / densidade_relativa) * (frequencia + 25) * math.sqrt(raio / distancia_entre_fases) * ((tensao_otima - vo) ** 2) * (10 ** 5)
             else:
-                fator_corona = {
-                                "0.6" : 0.012,
-                                "0.8" : 0.018,
-                                "1.0" : 0.05,
-                                "1.2" : 0.08,
-                                "1.4" : 0.3,
-                                "1.5" : 1.0,
-                                "1.8" : 3.5,
-                                "2.0" : 6.0,
-                                "2.2" : 8.0
-                }
+                if (tensao_otima / vo) <= 0.6:
+                    fator_corona = 0.012
+                elif (tensao_otima / vo) > 0.6 and (tensao_otima / vo) <= 0.8:
+                    fator_corona = 0.018
+                elif (tensao_otima / vo) > 0.8 and (tensao_otima / vo) <= 1.0:
+                    fator_corona = 0.05
+                elif (tensao_otima / vo) > 1.0 and (tensao_otima / vo) <= 1.2:
+                    fator_corona = 0.08
+                elif (tensao_otima / vo) > 1.2 and (tensao_otima / vo) <= 1.4:
+                    fator_corona = 0.3
+                elif (tensao_otima / vo) > 1.4 and (tensao_otima / vo) <= 1.5:
+                    fator_corona = 1.0
+                elif (tensao_otima / vo) > 1.5 and (tensao_otima / vo) <= 1.8:
+                    fator_corona = 3.5
+                elif (tensao_otima / vo) > 1.8 and (tensao_otima / vo) <= 2.0:
+                    fator_corona = 6.0
+                else:
+                    fator_corona = 8.0
 
-                fator = tensao_otima / vo
-                fc = fator_corona[str(fator)]
+                fc = fator_corona
                 perda_corona = ((1.11066 * (10 ** (-4)))/((math.log((2 * distancia_entre_fases)/ diametro_ext)) ** (-2))) * frequencia * (tensao_otima ** 2) * fc
 
             # Calculo Rendimento
-            potencia_perdas = 3 * resistencia * corrente_polar[0]
+            potencia_perdas = 3 * resistencia * corrente_polar[0] * (10 ** 3)
 
             rendimento = (potencia_corrigida / (potencia_corrigida + potencia_perdas))
 
+            df_resultados.loc[valor_df, "tensao"] = tensao_otima
             df_resultados.loc[valor_df, "cabo"] = nome_cabo
             df_resultados.loc[valor_df, "bitola"] = bitola
             df_resultados.loc[valor_df, "quantidade_subcondutores"] = quant_subcondutores
@@ -269,11 +297,10 @@ def calculo_modelagem(
             df_resultados.loc[valor_df, "resistencia"] = resistencia
             df_resultados.loc[valor_df, "indutancia"] = indutancia
             df_resultados.loc[valor_df, "capacitancia"] = capacitancia
-
-
-
-            
-
+            df_resultados.loc[valor_df, "regulacao"] = regulacao
+            df_resultados.loc[valor_df, "perda_corona"] = perda_corona
+            df_resultados.loc[valor_df, "rendimento"] = rendimento
+            valor_df += 1
 
     return
 
@@ -389,7 +416,8 @@ def verificar_campos():
                                         numero_circuitos,
                                         tensao_otima,
                                         corrente_polar,
-                                        potencia_corrigida
+                                        potencia_corrigida,
+                                        index
                                     )
                             else:  #Para apenas 1 subcondutor acima de 230 kV
                                 print()
@@ -404,42 +432,44 @@ def verificar_campos():
                                         numero_circuitos,
                                         tensao_otima,
                                         corrente_polar,
-                                        potencia_corrigida)
+                                        potencia_corrigida,
+                                        index)
+        resultado_modelagem()
 
-            """resposta_texto = "Tensao otima: " + str(tensao_otima) + " kV" + "\n"
-            resposta_texto += (
-                "Corrente: "
-                + str(corrente_polar[0])
-                + " <"
-                + str(math.degrees(corrente_polar[1]))
-                + " kA"
-                + "\n"
-            )
-            resposta_texto += (
-                "Distancia horizontal entre fases: " + str(distancia_horizontal) + "\n"
-            )
-            resposta_texto += (
-                "Distancia vertical entre fases: " + str(distancia_vertical) + "\n"
-            )
-            resposta_texto += "Condutor: " + str(nome_cabo) + "\n"
-            resposta_texto += (
-                "Distancia horizontal entre fases: " + str(distancia_horizontal) + "\n"
-            )
-            resposta_texto += (
-                "Condutores por fase: " + str(quantidade_condutores_fase)
-            ) + "\n"
-            resposta_texto += (
-                "Distancia entre subcondutores na mesma fase: "
-                + str(distancia_condutores_fase)
-                + "\n"
-            )
-            resposta_texto += "Regulacao de tensao: " + str(regulacao_tensao) + "\n"
-            resposta_texto += "Perda corona obtida: " + str(perda_corona) + "\n"
-            resposta_texto += "Rendimento obtido: " + str(rendimento) + "\n"
-            resposta_texto += "Resistencia: " + str(resistencia) + "\n"
+        """resposta_texto = "Tensao otima: " + str(tensao_otima) + " kV" + "\n"
+        resposta_texto += (
+            "Corrente: "
+            + str(corrente_polar[0])
+            + " <"
+            + str(math.degrees(corrente_polar[1]))
+            + " kA"
+            + "\n"
+        )
+        resposta_texto += (
+            "Distancia horizontal entre fases: " + str(distancia_horizontal) + "\n"
+        )
+        resposta_texto += (
+            "Distancia vertical entre fases: " + str(distancia_vertical) + "\n"
+        )
+        resposta_texto += "Condutor: " + str(nome_cabo) + "\n"
+        resposta_texto += (
+            "Distancia horizontal entre fases: " + str(distancia_horizontal) + "\n"
+        )
+        resposta_texto += (
+            "Condutores por fase: " + str(quantidade_condutores_fase)
+        ) + "\n"
+        resposta_texto += (
+            "Distancia entre subcondutores na mesma fase: "
+            + str(distancia_condutores_fase)
+            + "\n"
+        )
+        resposta_texto += "Regulacao de tensao: " + str(regulacao_tensao) + "\n"
+        resposta_texto += "Perda corona obtida: " + str(perda_corona) + "\n"
+        resposta_texto += "Rendimento obtido: " + str(rendimento) + "\n"
+        resposta_texto += "Resistencia: " + str(resistencia) + "\n"
 
-            resposta_label.config(text=resposta_texto)
-            """
+        resposta_label.config(text=resposta_texto)
+        """
         print()
 
 
