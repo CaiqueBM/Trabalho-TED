@@ -4,21 +4,6 @@ import math
 import cmath
 import csv
 
-"""df_info = pd.DataFrame(columns=[
-        "nome",
-        "mcm",
-        "seccao",
-        "diametro_condutor",
-        "raio_medio",
-        "res25cc",
-        "res2550",
-        "res2560",
-        "res50cc",
-        "res5050",
-        "res5060",
-        "corrente_maxima",
-        ])"""
-
 with open('cabos.csv', 'r') as arquivo_csv:
     # Crie um objeto leitor do CSV
     leitor_csv = csv.reader(arquivo_csv)
@@ -43,25 +28,80 @@ df_entrada = pd.DataFrame(
         "temperatura_ambiente",
     ]
 )
-df_resultados = pd.DataFrame(
+
+df_final = pd.DataFrame(
     columns=[
+        "tensao_otima",
+        "corrente",
         "cabo",
-        "bitola",
-        "numero_circuitos",
-        "quantidade_subcondutores",
-        "distancia_subcondutores",
-        "disposicao_condutores",
+        "cabo",
+        "disposical",
+        "dist_entre_fases",
+        "quant_subcondutores",
+        "dist_subcondutores",
+        "perda_corona",
+        "regulacao",
+        "rendimento",
     ]
 )
+
+df_resultados = pd.DataFrame()
 valor_df = 0
+regulacao_anterior = None
+regulacao_recente = None
+perda_corona_anterior = None
+perda_corona_recente = None
+rendimento_anterior = None
+rendimento_recente = None
 
 
 def resultado_modelagem():
     # Passar lendo todos os resultados do dataframe e buscar a melhor combinaçao de resultados
     global df_resultados
-    for row in df_resultados:
-        print()
-
+    global df_entrada
+    global regulacao_recente
+    global regulacao_anterior
+    global perda_corona_recente
+    global perda_corona_anterior
+    global rendimento_recente
+    global rendimento_anterior
+    
+    perda_corona_max = float(df_entrada.iloc[0]["perda_corona_max"])
+    regulacao_maxima = float(df_entrada.iloc[0]["regulacao_maxima"])
+    rendimento_minimo = float(df_entrada.iloc[0]["rendimento_minimo"])
+    
+    
+    for index, row in df_resultados.iterrows():
+        regulacao = row["regulacao"]
+        perda_corona = row["perda_corona"]
+        rendimento = row["rendimento"]
+        
+        #Verificar os requisitos do projeto
+        if regulacao < regulacao_maxima:
+            if perda_corona < perda_corona_max:
+                if rendimento > rendimento_minimo:
+                    
+                    #Verificar o melhor resultado possivel
+                    if regulacao_recente is not None:
+                        if (regulacao < regulacao_recente) and (perda_corona < perda_corona_recente) and (rendimento > rendimento_recente):
+                            regulacao_anterior = regulacao_recente
+                            regulacao_recente = regulacao
+                            perda_corona_anterior = perda_corona_recente
+                            perda_corona_recente = perda_corona
+                            rendimento_anterior = rendimento_recente
+                            rendimento_recente = rendimento
+                    else:
+                        regulacao_recente = regulacao
+                        perda_corona_recente = perda_corona
+                        rendimento_recente = rendimento
+                        index_melhor = index
+                  
+    valor_final = df_resultados.iloc[index_melhor]
+    print(valor_final)
+                        
+                        
+    return
+        
 
 def calculo_modelagem(
     nome_cabo, bitola, quant_subcondutores, dist_subcondutores, quant_circuitos, tensao_otima, corrente_polar, potencia_corrigida, index
@@ -70,6 +110,10 @@ def calculo_modelagem(
     global df_resultados
     global df_entrada
     global valor_df
+    global regulacao_anterior
+    global perda_corona_anterior
+    global rendimento_anterior
+    condicao = 0
 
     dist_subcondutores = dist_subcondutores * (10 ** (-2))
 
@@ -82,6 +126,8 @@ def calculo_modelagem(
     temperatura_ambiente = float(df_entrada.iloc[0]["temperatura_ambiente"])
     frequencia = float(df_entrada.iloc[0]["frequencia"])
     comprimento_linha = float(df_entrada.iloc[0]["comprimento_linha"])
+    regulacao_maxima = regulacao_maxima * 100
+    rendimento_minimo = rendimento_minimo *100
 
     temp = 228
     E_0 = 8.854187817 * (10 ** (-12))
@@ -132,8 +178,7 @@ def calculo_modelagem(
             distancia_entre_fases * distancia_entre_fases * 2 * distancia_entre_fases
         ) ** (1 / 3)
 
-    raio = (float(diametro_ext) * (10 ** (-3))) / 2
-    # rmg = raio
+    raio = (float(diametro_ext) * (10 ** (-3))) / 2    #metros
 
     # Calculo da Resistencia Serie (Rs)
     if T_aux > 37.5:
@@ -155,20 +200,19 @@ def calculo_modelagem(
         capacitancia = (2 * math.pi * E_0) / (math.log(dmg / rmg))
     elif quant_subcondutores == 2:
         ds_L = math.sqrt(raio_medio_geo * dist_subcondutores)
-        indutancia = 2 * pow(10, -7) * math.log(dmg / ds_L)
+        indutancia = (2 * (10 ** (-7)) * math.log(dmg / ds_L)) * (10 ** 3)
         ds_C = math.sqrt(rmg * dist_subcondutores)
-        capacitancia = (2 * math.pi * E_0) / (math.log(dmg / ds_C))
-        x = math.log(dmg / ds_L)
+        capacitancia = (2 * math.pi * E_0) / (math.log(dmg / ds_C)) * (10 ** 3)
     elif quant_subcondutores == 3:
         ds_L = pow(raio_medio_geo * pow(dist_subcondutores, 2), 1 / 3)
-        indutancia = 2 * pow(10, -7) * math.log(dmg / ds_L)
+        indutancia = 2 * pow(10, -7) * math.log(dmg / ds_L) * (10 ** 3)
         ds_C = pow(rmg * pow(dist_subcondutores, 2), 1 / 3)
-        capacitancia = (2 * math.pi * E_0) / (math.log(dmg / ds_C))
+        capacitancia = (2 * math.pi * E_0) / (math.log(dmg / ds_C)) * (10 ** 3)
     elif quant_subcondutores == 4:
         ds_L = 1.09 * pow(raio_medio_geo * pow(dist_subcondutores, 3), 1 / 4)
-        indutancia = 2 * pow(10, -7) * math.log(dmg / ds_L)
+        indutancia = 2 * pow(10, -7) * math.log(dmg / ds_L) * (10 ** 3)
         ds_C = 1.09 * pow(rmg * pow(dist_subcondutores, 3), 1 / 4)
-        capacitancia = (2 * math.pi * E_0) / (math.log(dmg / ds_C))
+        capacitancia = (2 * math.pi * E_0) / (math.log(dmg / ds_C)) * (10 ** 3)
 
     # Calculo dos parametros ABCD
     zs = resistencia + (1j * w * indutancia)
@@ -198,109 +242,124 @@ def calculo_modelagem(
         ir_p = cmath.rect(corrente_polar[0], corrente_polar[1])
         ir = (ir_p * (10**3)) / cmath.sqrt(3)
         vr = (tensao_otima * (10**3)) / cmath.sqrt(3)
-        vs = (tensao_otima * (10**3)) + (ir * zs)  # Fase - neutro
-        i_s = ir
+
     vs_cp = A * vr + B * ir
     is_cp = C * vr + D * ir
-    vs_cl = A * vr + B * ir * (1 + percentual_carga_leve)
-    is_cl = C * vr + D * ir * (1 + percentual_carga_leve)
+    vs_cl = A * vr + B * ir * percentual_carga_leve
+    is_cl = C * vr + D * ir * percentual_carga_leve
 
     regulacao = abs((abs(vs_cl) - abs(vs_cp)) / abs(vs_cp)) * 100
-
+    if nome_cabo == "Ibis":
+        print()
     # Calculo da perda por corona ( Gradiente de potencial)
     # Calculo tensao critica disruptiva
     e0 = 21.1 * (10**3)
     densidade_relativa = (3.9211 * pressao_atm) / (273 + temperatura_ambiente)
-    for fator_irregularidade_condutor in range(80, 87):
-        mc = fator_irregularidade_condutor / 100
-        vo = e0 * densidade_relativa * dmg * mc * math.log(distancia_entre_fases / dmg)
-
-        # Tensao critica visual
-        for fator_irregularidade_condutor_visivel in range(80, 85):
-            mv = fator_irregularidade_condutor_visivel / 100
-            vv = (
-                e0
-                * densidade_relativa
-                * dmg
-                * mv
-                * (1 + (0.3 / math.sqrt(densidade_relativa * dmg)))
-                * math.log(distancia_entre_fases / dmg)
-            )
-
-            #Calculo da resistencia equivalente para 2, 3 ou 4 subcondutores
-            if quant_subcondutores != 1: 
-                a = 0.01  # valor mínimo inicial de x
-                b = 10.0  # valor máximo inicial de x
-                precision = 0.0001  # precisão desejada
+    for fator_irregularidade_condutor in range(80, 87, 2):
+        #Calculo da resistencia equivalente para 2, 3 ou 4 subcondutores
+        if quant_subcondutores != 1: 
+            a = 0.01  # valor mínimo inicial de x
+            b = 10.0  # valor máximo inicial de x
+            precision = 0.0001  # precisão desejada
+            def f(x):
+                return dmg / x - ((dmg / ds_C) ** ((quant_subcondutores * raio) / x))
+            while abs(b - a) > precision:
+                c = (a + b) / 2
                 
-                def f(x):
-                    return dmg / x - ((dmg / ds_C) ** (quant_subcondutores * raio / x))
-                
-                while abs(b - a) > precision:
-                    c = (a + b) / 2
-                    
-                    if f(c) == 0:
-                        break
-                    elif f(a) * f(c) < 0:
-                        b = c
-                    else:
-                        a = c
-                
-                x = (a + b) / 2
-                req = x
-            else:
-                req = raio
-
-            if disposicao_condutores == "Horizontal":
-                vol = vo * 0.96
-                voc = vo * 1.06
-            if frequencia >= 25 and frequencia <= 120 and raio > 0.25 and (tensao_otima/vo) > 1.8:
-                perda_corona = (241 / densidade_relativa) * (frequencia + 25) * math.sqrt(raio / distancia_entre_fases) * ((tensao_otima - vo) ** 2) * (10 ** 5)
-            else:
-                if (tensao_otima / vo) <= 0.6:
-                    fator_corona = 0.012
-                elif (tensao_otima / vo) > 0.6 and (tensao_otima / vo) <= 0.8:
-                    fator_corona = 0.018
-                elif (tensao_otima / vo) > 0.8 and (tensao_otima / vo) <= 1.0:
-                    fator_corona = 0.05
-                elif (tensao_otima / vo) > 1.0 and (tensao_otima / vo) <= 1.2:
-                    fator_corona = 0.08
-                elif (tensao_otima / vo) > 1.2 and (tensao_otima / vo) <= 1.4:
-                    fator_corona = 0.3
-                elif (tensao_otima / vo) > 1.4 and (tensao_otima / vo) <= 1.5:
-                    fator_corona = 1.0
-                elif (tensao_otima / vo) > 1.5 and (tensao_otima / vo) <= 1.8:
-                    fator_corona = 3.5
-                elif (tensao_otima / vo) > 1.8 and (tensao_otima / vo) <= 2.0:
-                    fator_corona = 6.0
+                if f(c) == 0:
+                    break
+                elif f(a) * f(c) < 0:
+                    b = c
                 else:
-                    fator_corona = 8.0
+                    a = c
+            x = (a + b) / 2
+            req = x * 100 #cm
+        else:
+            req = raio * 100 #cm
+        
+        mc = fator_irregularidade_condutor / 100
+        vo = e0 * densidade_relativa * req * mc * math.log((dmg * 100) / req)
+        
+            
+        if disposicao_condutores == "Horizontal":
+            v0cc = vo * 0.96
+            v0cl = vo * 1.06
+            if frequencia >= 25 and frequencia <= 120 and req > 0.25 and (tensao_otima/vo) > 1.8:
+                perda_corona = (241 / densidade_relativa) * (frequencia + 25) * math.sqrt(req / distancia_entre_fases) * ((tensao_otima - vo) ** 2) * (10 ** 5)
+            else:
+                if ((tensao_otima * 1000) / v0cl) <= 0.6:
+                    fator_corona_cl = 0.012
+                elif ((tensao_otima * 1000) / v0cl) > 0.6 and ((tensao_otima * 1000) / v0cl) <= 0.8:
+                    fator_corona_cl = 0.018
+                elif ((tensao_otima * 1000) / v0cl) > 0.8 and ((tensao_otima * 1000) / v0cl) <= 1.0:
+                    fator_corona_cl = 0.05
+                elif ((tensao_otima * 1000) / v0cl) > 1.0 and ((tensao_otima * 1000) / v0cl) <= 1.2:
+                    fator_corona_cl = 0.08
+                elif ((tensao_otima * 1000) / v0cl) > 1.2 and ((tensao_otima * 1000) / v0cl) <= 1.4:
+                    fator_corona_cl = 0.3
+                elif ((tensao_otima * 1000) / v0cl) > 1.4 and ((tensao_otima * 1000) / v0cl) <= 1.5:
+                    fator_corona_cl = 1.0
+                elif ((tensao_otima * 1000) / v0cl) > 1.5 and ((tensao_otima * 1000) / v0cl) <= 1.8:
+                    fator_corona_cl = 3.5
+                elif ((tensao_otima * 1000) / v0cl) > 1.8 and ((tensao_otima * 1000) / v0cl) <= 2.0:
+                    fator_corona_cl = 6.0
+                else:
+                    fator_corona_cl = 8.0
 
-                fc = fator_corona
-                perda_corona = ((1.11066 * (10 ** (-4)))/((math.log((2 * distancia_entre_fases)/ diametro_ext)) ** (-2))) * frequencia * (tensao_otima ** 2) * fc
-
-            # Calculo Rendimento
-            potencia_perdas = 3 * resistencia * corrente_polar[0] * (10 ** 3)
-
-            rendimento = (potencia_corrigida / (potencia_corrigida + potencia_perdas))
-
-            df_resultados.loc[valor_df, "tensao"] = tensao_otima
-            df_resultados.loc[valor_df, "cabo"] = nome_cabo
-            df_resultados.loc[valor_df, "bitola"] = bitola
-            df_resultados.loc[valor_df, "quantidade_subcondutores"] = quant_subcondutores
-            # Numero de circuito é igual a 1
-            df_resultados.loc[valor_df, "numero_circuitos"] = quant_circuitos
-            df_resultados.loc[valor_df, "distancia_subcondutores"] = dist_subcondutores
-            df_resultados.loc[valor_df, "disposicao_condutores"] = "Horizontal"
-            df_resultados.loc[valor_df, "disposicao_condutores"] = disposicao_condutores
-            df_resultados.loc[valor_df, "distancia_entre_fases"] = distancia_entre_fases
-            df_resultados.loc[valor_df, "resistencia"] = resistencia
-            df_resultados.loc[valor_df, "indutancia"] = indutancia
-            df_resultados.loc[valor_df, "capacitancia"] = capacitancia
-            df_resultados.loc[valor_df, "regulacao"] = regulacao
-            df_resultados.loc[valor_df, "perda_corona"] = perda_corona
-            df_resultados.loc[valor_df, "rendimento"] = rendimento
-            valor_df += 1
+                if ((tensao_otima * 1000) / v0cc) <= 0.6:
+                    fator_corona_cc = 0.012
+                elif ((tensao_otima * 1000) / v0cc) > 0.6 and ((tensao_otima * 1000) / v0cc) <= 0.8:
+                    fator_corona_cc = 0.018
+                elif ((tensao_otima * 1000) / v0cc) > 0.8 and ((tensao_otima * 1000) / v0cc) <= 1.0:
+                    fator_corona_cc = 0.05
+                elif ((tensao_otima * 1000) / v0cc) > 1.0 and ((tensao_otima * 1000) / v0cc) <= 1.2:
+                    fator_corona_cc = 0.08
+                elif ((tensao_otima * 1000) / v0cc) > 1.2 and ((tensao_otima * 1000) / v0cc) <= 1.4:
+                    fator_corona_cc = 0.3
+                elif ((tensao_otima * 1000) / v0cc) > 1.4 and ((tensao_otima * 1000) / v0cc) <= 1.5:
+                    fator_corona_cc = 1.0
+                elif ((tensao_otima * 1000) / v0cc) > 1.5 and ((tensao_otima * 1000) / v0cc) <= 1.8:
+                    fator_corona_cc = 3.5
+                elif ((tensao_otima * 1000) / v0cc) > 1.8 and ((tensao_otima * 1000) / v0cc) <= 2.0:
+                    fator_corona_cc = 6.0
+                else:
+                    fator_corona_cc = 8.0
+                
+                fccl = fator_corona_cl
+                fccc = fator_corona_cc
+                
+                perda_corona_cl = ((1.11066 * (10 ** (-4)))/((math.log((distancia_entre_fases * 100)/ req)) ** (2))) * frequencia * (((tensao_otima)/math.sqrt(3)) ** 2) * fccl
+                perda_corona_cc = ((1.11066 * (10 ** (-4)))/((math.log((distancia_entre_fases * 100)/ req)) ** (2))) * frequencia * (((tensao_otima)/math.sqrt(3)) ** 2) * fccc
+                perda_corona = 3 * (perda_corona_cl + perda_corona_cc)
+                
+        # Calculo Rendimento
+        potencia_emissor = 3 * (vs_cp * is_cp)
+        potencia_emissor_polar = cmath.polar(potencia_emissor)
+        perda_corona_total = (perda_corona * comprimento_linha) * (10 ** 3)
+        perda_joule = resistencia * comprimento_linha * ((corrente_polar[0]) ** 2) * (10 ** 6)
+        rendimento = (((potencia_emissor_polar[0]) / (perda_corona_total + potencia_emissor_polar[0] + perda_joule ))) * 100
+        
+        
+        df_resultados.loc[valor_df, "tensao"] = tensao_otima
+        df_resultados.loc[valor_df, "cabo"] = nome_cabo
+        df_resultados.loc[valor_df, "bitola"] = bitola
+        df_resultados.loc[valor_df, "quantidade_subcondutores"] = quant_subcondutores
+        df_resultados.loc[valor_df, "numero_circuitos"] = quant_circuitos            # Numero de circuito é igual a 1
+        df_resultados.loc[valor_df, "distancia_subcondutores"] = dist_subcondutores
+        df_resultados.loc[valor_df, "disposicao_condutores"] = "Horizontal"
+        df_resultados.loc[valor_df, "disposicao_condutores"] = disposicao_condutores
+        df_resultados.loc[valor_df, "distancia_entre_fases"] = distancia_entre_fases
+        df_resultados.loc[valor_df, "resistencia"] = resistencia
+        df_resultados.loc[valor_df, "indutancia"] = indutancia
+        df_resultados.loc[valor_df, "capacitancia"] = capacitancia
+        df_resultados.loc[valor_df, "regulacao"] = regulacao
+        df_resultados.loc[valor_df, "perda_corona"] = perda_corona
+        df_resultados.loc[valor_df, "rendimento"] = rendimento
+        valor_df += 1
+        #if regulacao < regulacao_maxima and perda_corona < perda_corona_max and rendimento > rendimento_minimo:
+                
+            
+       
 
     return
 
@@ -309,6 +368,10 @@ def verificar_campos():
     global df_info
     global df_resultados
     global df_entrada
+    global regulacao_recente
+    global perda_corona_recente
+    global rendimento_recente
+
     tensoes_padroes = [
         6,
         11.4,
@@ -367,7 +430,7 @@ def verificar_campos():
         # Calculo da tensao otima
         potencia_corrigida = potencia_ativa * (1 + previsao_futura)  #kW
         tensao_otima = 5.5 * math.sqrt(
-            (0.62 * comprimento_linha) + (potencia_corrigida / 100)
+            (0.62 * comprimento_linha) + (potencia_corrigida / 100) #kV
         )
         # Escolher a tensao otima padrao
         tensao_otima = min(tensoes_padroes, key=lambda x: abs(x - tensao_otima)) #kV
@@ -394,7 +457,7 @@ def verificar_campos():
                     # Quantidade de subcondutores
                     for quant_subcondutores in range(1, 5):
                         # Verificar se a corrente sera suportada
-                        if (int(corrente_polar[0]) * 1000 / quant_subcondutores) <= int(
+                        if (int(corrente_polar[0]) * 1000 / quant_subcondutores) <= float(
                             corrente_max
                         ):
                             # Distancia de segurança entre subcondutores(Varia 10 a 30 x o diametro)
@@ -404,7 +467,7 @@ def verificar_campos():
                                 or quant_subcondutores == 3
                                 or quant_subcondutores == 4
                             ):
-                                for dist in range(10, 31):
+                                for dist in range(10, 31, 5):
                                     numero_circuitos = "1"
                                     dist_subcondutores = dist
                                     
@@ -445,32 +508,32 @@ def verificar_campos():
             + " kA"
             + "\n"
         )
+        quant_subcondutores = float(df_entrada.iloc[0]["quant_subcondutores"])
         resposta_texto += (
-            "Distancia horizontal entre fases: " + str(distancia_horizontal) + "\n"
+            "Distancia entre fases: " + str(distancia_entre_fases) + "\n"
         )
+
+        distancia_entre_fases = float(df_entrada.iloc[0]["distancia_entre_fases"])
         resposta_texto += (
-            "Distancia vertical entre fases: " + str(distancia_vertical) + "\n"
+            "Distancia entre fases: " + str(distancia_entre_fases) + "\n"
         )
-        resposta_texto += "Condutor: " + str(nome_cabo) + "\n"
+        quant_subcondutores = float(df_entrada.iloc[0]["quant_subcondutores"])
+        
+
         resposta_texto += (
-            "Distancia horizontal entre fases: " + str(distancia_horizontal) + "\n"
-        )
-        resposta_texto += (
-            "Condutores por fase: " + str(quantidade_condutores_fase)
+            "Condutores por fase: " + str(dist_subcondutores)
         ) + "\n"
         resposta_texto += (
             "Distancia entre subcondutores na mesma fase: "
             + str(distancia_condutores_fase)
             + "\n"
         )
-        resposta_texto += "Regulacao de tensao: " + str(regulacao_tensao) + "\n"
-        resposta_texto += "Perda corona obtida: " + str(perda_corona) + "\n"
-        resposta_texto += "Rendimento obtido: " + str(rendimento) + "\n"
-        resposta_texto += "Resistencia: " + str(resistencia) + "\n"
+        resposta_texto = "Regulacao de tensao: " + str(regulacao_recente) + "\n"
+        resposta_texto += "Perda corona obtida: " + str(perda_corona_recente) + "\n"
+        resposta_texto += "Rendimento obtido: " + str(rendimento_recente)
 
-        resposta_label.config(text=resposta_texto)
-        """
-        print()
+        resposta_label.config(text=resposta_texto)"""
+        
 
 
 # Criando a segunda janela
@@ -515,7 +578,7 @@ temperatura_ambiente_entry.grid(row=11, column=0)
 
 pressao_atm_label = tk.Label(janela, text="Pressao atmosferica:")
 pressao_atm_label.grid(row=12, column=0, sticky="w")
-valor_entry = tk.StringVar(value="25")
+valor_entry = tk.StringVar(value="76")
 pressao_atm_entry = tk.Entry(janela, textvariable=valor_entry)
 pressao_atm_entry.grid(row=13, column=0)
 
