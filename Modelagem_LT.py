@@ -29,21 +29,7 @@ df_entrada = pd.DataFrame(
     ]
 )
 
-df_final = pd.DataFrame(
-    columns=[
-        "tensao_otima",
-        "corrente",
-        "cabo",
-        "cabo",
-        "disposical",
-        "dist_entre_fases",
-        "quant_subcondutores",
-        "dist_subcondutores",
-        "perda_corona",
-        "regulacao",
-        "rendimento",
-    ]
-)
+df_final = pd.DataFrame()
 
 df_resultados = pd.DataFrame()
 valor_df = 0
@@ -53,9 +39,12 @@ perda_corona_anterior = None
 perda_corona_recente = None
 rendimento_anterior = None
 rendimento_recente = None
+corrente_recente = math.inf
+dif_corrente_recente = None
+nome_cabo_recente = None
+quant_subcondutores_recente = None
 
-
-def resultado_modelagem():
+def resultado_modelagem(tensao_otima, corrente_rect, corrente_polar):
     # Passar lendo todos os resultados do dataframe e buscar a melhor combinaçao de resultados
     global df_resultados
     global df_entrada
@@ -65,46 +54,80 @@ def resultado_modelagem():
     global perda_corona_anterior
     global rendimento_recente
     global rendimento_anterior
+    global corrente_recente
+    global dif_corrente_recente
+    global nome_cabo_recente
+    global quant_subcondutores_recente
+    global df_final
     
     perda_corona_max = float(df_entrada.iloc[0]["perda_corona_max"])
     regulacao_maxima = float(df_entrada.iloc[0]["regulacao_maxima"])
     rendimento_minimo = float(df_entrada.iloc[0]["rendimento_minimo"])
-    
-    
+    tamanho = len(df_resultados)
+    #for index, row in reversed(list(df_resultados.iterrows())):
     for index, row in df_resultados.iterrows():
+        nome_cabo_atual = row["cabo"]
         regulacao = row["regulacao"]
         perda_corona = row["perda_corona"]
         rendimento = row["rendimento"]
+        max_corrente = row["max_corrente"]
+        quant_subcondutores = row["quantidade_subcondutores"]
+        distancia_subcondutores = row["distancia_subcondutores"]
+        disposicao_condutores = row["disposicao_condutores"]
+        distancia_entre_fases = row["distancia_entre_fases"]
         
-        #Verificar os requisitos do projeto
-        if regulacao < regulacao_maxima:
-            if perda_corona < perda_corona_max:
-                if rendimento > rendimento_minimo:
-                    
-                    #Verificar o melhor resultado possivel
-                    if regulacao_recente is not None:
-                        if (regulacao < regulacao_recente) and (perda_corona < perda_corona_recente) and (rendimento > rendimento_recente):
-                            regulacao_anterior = regulacao_recente
-                            regulacao_recente = regulacao
-                            perda_corona_anterior = perda_corona_recente
-                            perda_corona_recente = perda_corona
-                            rendimento_anterior = rendimento_recente
-                            rendimento_recente = rendimento
-                    else:
+        corrente_necessaria_por_cabo = ((corrente_polar[0] * 1000) / quant_subcondutores)
+         
+        #dif_corrente = float(max_corrente) - corrente_necessaria_por_cabo
+        #if dif_corrente_recente is None or dif_corrente < dif_corrente_recente:      
+        if (corrente_necessaria_por_cabo) < float(max_corrente):
+            #Verificar os requisitos do projeto
+            if regulacao < regulacao_maxima:
+                if perda_corona < perda_corona_max:
+                    if rendimento > rendimento_minimo:
+                        #if nome_cabo_atual == "Redwing":
+                            #Verificar o melhor resultado possivel
+                        nome_cabo_recente = nome_cabo_atual
                         regulacao_recente = regulacao
                         perda_corona_recente = perda_corona
                         rendimento_recente = rendimento
-                        index_melhor = index
-                  
-    valor_final = df_resultados.iloc[index_melhor]
-    print(valor_final)
+                        corrente_recente = max_corrente
+                        quant_subcondutores_recente = quant_subcondutores
+                        corrente_necessaria_recente = corrente_necessaria_por_cabo
+                        disposicao_recente = disposicao_condutores
+                        distancia_fases_recente = distancia_entre_fases
+                        distancia_subcondutores_recente = distancia_subcondutores
                         
-                        
+
+    df_resultados.to_excel('E:\Trabalho TED/resultados.xlsx', index=False)
+  
+    
+    resposta_texto = "Tensao otima: " + str(tensao_otima) + " kV" + "\n"
+    resposta_texto += (
+        "Disposiçao dos condutores: " + str(disposicao_recente) + "\n"
+    )
+    resposta_texto += (
+        "Distancia entre fases: " + str(round(distancia_fases_recente, 2)) + " m" + "\n"
+    )
+    resposta_texto += (
+        "Condutor: " + str(nome_cabo_recente) + "\n"
+    )
+    resposta_texto += (
+        "Condutores por fase: " + str(quant_subcondutores_recente) + "\n"
+    )
+    resposta_texto += (
+        "Distancia entre subcondutores: " + str(round(distancia_subcondutores_recente, 2 )) + " cm" + "\n"
+    )
+    resposta_texto += "Regulacao de tensao: " + str(round(regulacao_recente, 2)) + " %" + "\n"
+    resposta_texto += "Perda corona obtida: " + str(round(perda_corona_recente, 2)) + " kW/km" + "\n"
+    resposta_texto += "Rendimento obtido: " + str(round(rendimento_recente, 2)) + " %"
+        
+    resposta_label.config(text=resposta_texto)
     return
         
 
 def calculo_modelagem(
-    nome_cabo, bitola, quant_subcondutores, dist_subcondutores, quant_circuitos, tensao_otima, corrente_polar, potencia_corrigida, index
+    nome_cabo, bitola, corrente_max, quant_subcondutores, dist_subcondutores, quant_circuitos, tensao_otima, corrente_polar, potencia_corrigida, index
 ):
     global df_info
     global df_resultados
@@ -249,8 +272,7 @@ def calculo_modelagem(
     is_cl = C * vr + D * ir * percentual_carga_leve
 
     regulacao = abs((abs(vs_cl) - abs(vs_cp)) / abs(vs_cp)) * 100
-    if nome_cabo == "Ibis":
-        print()
+
     # Calculo da perda por corona ( Gradiente de potencial)
     # Calculo tensao critica disruptiva
     e0 = 21.1 * (10**3)
@@ -339,7 +361,6 @@ def calculo_modelagem(
         perda_joule = resistencia * comprimento_linha * ((corrente_polar[0]) ** 2) * (10 ** 6)
         rendimento = (((potencia_emissor_polar[0]) / (perda_corona_total + potencia_emissor_polar[0] + perda_joule ))) * 100
         
-        
         df_resultados.loc[valor_df, "tensao"] = tensao_otima
         df_resultados.loc[valor_df, "cabo"] = nome_cabo
         df_resultados.loc[valor_df, "bitola"] = bitola
@@ -349,12 +370,11 @@ def calculo_modelagem(
         df_resultados.loc[valor_df, "disposicao_condutores"] = "Horizontal"
         df_resultados.loc[valor_df, "disposicao_condutores"] = disposicao_condutores
         df_resultados.loc[valor_df, "distancia_entre_fases"] = distancia_entre_fases
-        df_resultados.loc[valor_df, "resistencia"] = resistencia
-        df_resultados.loc[valor_df, "indutancia"] = indutancia
-        df_resultados.loc[valor_df, "capacitancia"] = capacitancia
         df_resultados.loc[valor_df, "regulacao"] = regulacao
         df_resultados.loc[valor_df, "perda_corona"] = perda_corona
         df_resultados.loc[valor_df, "rendimento"] = rendimento
+        df_resultados.loc[valor_df, "max_corrente"] = corrente_max
+        
         valor_df += 1
         #if regulacao < regulacao_maxima and perda_corona < perda_corona_max and rendimento > rendimento_minimo:
                 
@@ -453,88 +473,54 @@ def verificar_campos():
                 # bitola do condutor
                 bitola = row.iloc[2]
                 # Linhas acima de 230 kV utilizam condutores geminados
-                if tensao_otima >= 230:
+                #if tensao_otima >= 230:
                     # Quantidade de subcondutores
-                    for quant_subcondutores in range(1, 5):
-                        # Verificar se a corrente sera suportada
-                        if (int(corrente_polar[0]) * 1000 / quant_subcondutores) <= float(
-                            corrente_max
+                for quant_subcondutores in range(1, 5):
+                    # Verificar se a corrente sera suportada
+                    if (int(corrente_polar[0]) * 1000 / quant_subcondutores) <= float(
+                        corrente_max
+                    ):
+                        # Distancia de segurança entre subcondutores(Varia 10 a 30 x o diametro)
+                        # 2, 3 ou 4 subcondutores por fase
+                        if (
+                            quant_subcondutores == 2
+                            or quant_subcondutores == 3
+                            or quant_subcondutores == 4
                         ):
-                            # Distancia de segurança entre subcondutores(Varia 10 a 30 x o diametro)
-                            # 2, 3 ou 4 subcondutores por fase
-                            if (
-                                quant_subcondutores == 2
-                                or quant_subcondutores == 3
-                                or quant_subcondutores == 4
-                            ):
-                                for dist in range(10, 31, 5):
-                                    numero_circuitos = "1"
-                                    dist_subcondutores = dist
-                                    
-                                    calculo_modelagem(
-                                        nome_cabo,
-                                        bitola,
-                                        quant_subcondutores,
-                                        dist_subcondutores,
-                                        numero_circuitos,
-                                        tensao_otima,
-                                        corrente_polar,
-                                        potencia_corrigida,
-                                        index
-                                    )
-                            else:  #Para apenas 1 subcondutor acima de 230 kV
-                                print()
-                # Tensao otima abaixo de 230 kV, apenas 1 condutor por fase
-                else:
-                    numero_circuitos = "1"
-                    calculo_modelagem(
-                                        nome_cabo,
-                                        bitola,
-                                        1,
-                                        0,
-                                        numero_circuitos,
-                                        tensao_otima,
-                                        corrente_polar,
-                                        potencia_corrigida,
-                                        index)
-        resultado_modelagem()
+                            for dist in range(10, 31, 5):
+                                numero_circuitos = "1"
+                                dist_subcondutores = dist
+                                
+                                calculo_modelagem(
+                                    nome_cabo,
+                                    bitola,
+                                    corrente_max,
+                                    quant_subcondutores,
+                                    dist_subcondutores,
+                                    numero_circuitos,
+                                    tensao_otima,
+                                    corrente_polar,
+                                    potencia_corrigida,
+                                    index
+                                )
+                        else:  #Para apenas 1 subcondutor acima de 230 kV
+                            dist_subcondutores = 0
+                            numero_circuitos = "1"
 
-        """resposta_texto = "Tensao otima: " + str(tensao_otima) + " kV" + "\n"
-        resposta_texto += (
-            "Corrente: "
-            + str(corrente_polar[0])
-            + " <"
-            + str(math.degrees(corrente_polar[1]))
-            + " kA"
-            + "\n"
-        )
-        quant_subcondutores = float(df_entrada.iloc[0]["quant_subcondutores"])
-        resposta_texto += (
-            "Distancia entre fases: " + str(distancia_entre_fases) + "\n"
-        )
+                            calculo_modelagem(
+                                    nome_cabo,
+                                    bitola,
+                                    corrente_max,
+                                    quant_subcondutores,
+                                    dist_subcondutores,
+                                    numero_circuitos,
+                                    tensao_otima,
+                                    corrente_polar,
+                                    potencia_corrigida,
+                                    index
+                                )
 
-        distancia_entre_fases = float(df_entrada.iloc[0]["distancia_entre_fases"])
-        resposta_texto += (
-            "Distancia entre fases: " + str(distancia_entre_fases) + "\n"
-        )
-        quant_subcondutores = float(df_entrada.iloc[0]["quant_subcondutores"])
-        
-
-        resposta_texto += (
-            "Condutores por fase: " + str(dist_subcondutores)
-        ) + "\n"
-        resposta_texto += (
-            "Distancia entre subcondutores na mesma fase: "
-            + str(distancia_condutores_fase)
-            + "\n"
-        )
-        resposta_texto = "Regulacao de tensao: " + str(regulacao_recente) + "\n"
-        resposta_texto += "Perda corona obtida: " + str(perda_corona_recente) + "\n"
-        resposta_texto += "Rendimento obtido: " + str(rendimento_recente)
-
-        resposta_label.config(text=resposta_texto)"""
-        
-
+        resultado_modelagem(tensao_otima, corrente_rect, corrente_polar)
 
 # Criando a segunda janela
 janela = tk.Tk()
@@ -552,31 +538,31 @@ valor_entry = tk.StringVar(value="0.95")
 fator_potencia_entry = tk.Entry(janela, textvariable=valor_entry)
 fator_potencia_entry.grid(row=3, column=0)
 
-comprimento_label = tk.Label(janela, text="Comprimento da linha:")
+comprimento_label = tk.Label(janela, text="Comprimento da linha (km):")
 comprimento_label.grid(row=4, column=0, sticky="w")
 valor_entry = tk.StringVar(value="300")
 comprimento_entry = tk.Entry(janela, textvariable=valor_entry)
 comprimento_entry.grid(row=5, column=0)
 
-frequencia_label = tk.Label(janela, text="Frequencia de operaçao:")
+frequencia_label = tk.Label(janela, text="Frequencia de operação (Hz):")
 frequencia_label.grid(row=6, column=0, sticky="w")
 valor_entry = tk.StringVar(value="60")
 frequencia_entry = tk.Entry(janela, textvariable=valor_entry)
 frequencia_entry.grid(row=7, column=0)
 
-temperatura_operacao_label = tk.Label(janela, text="Temperatura de operaçao:")
+temperatura_operacao_label = tk.Label(janela, text="Temperatura de operação (°C):")
 temperatura_operacao_label.grid(row=8, column=0, sticky="w")
 valor_entry = tk.StringVar(value="46")
 temperatura_operacao_entry = tk.Entry(janela, textvariable=valor_entry)
 temperatura_operacao_entry.grid(row=9, column=0)
 
-temperatura_ambiente_label = tk.Label(janela, text="Temperatura ambiente:")
+temperatura_ambiente_label = tk.Label(janela, text="Temperatura ambiente (°C):")
 temperatura_ambiente_label.grid(row=10, column=0, sticky="w")
 valor_entry = tk.StringVar(value="25")
 temperatura_ambiente_entry = tk.Entry(janela, textvariable=valor_entry)
 temperatura_ambiente_entry.grid(row=11, column=0)
 
-pressao_atm_label = tk.Label(janela, text="Pressao atmosferica:")
+pressao_atm_label = tk.Label(janela, text="Pressao atmosferica (cmHg):")
 pressao_atm_label.grid(row=12, column=0, sticky="w")
 valor_entry = tk.StringVar(value="76")
 pressao_atm_entry = tk.Entry(janela, textvariable=valor_entry)
@@ -588,25 +574,25 @@ valor_entry = tk.StringVar(value="10")
 percentual_carga_leve_entry = tk.Entry(janela, textvariable=valor_entry)
 percentual_carga_leve_entry.grid(row=1, column=1)
 
-regulacao_maxima_label = tk.Label(janela, text="Regulaçao de tensao maxima:")
+regulacao_maxima_label = tk.Label(janela, text="Regulação de tensao máxima (%):")
 regulacao_maxima_label.grid(row=2, column=1, sticky="w")
 valor_entry = tk.StringVar(value="10")
 regulacao_maxima_entry = tk.Entry(janela, textvariable=valor_entry)
 regulacao_maxima_entry.grid(row=3, column=1)
 
-perda_efeito_corona_label = tk.Label(janela, text="Perda por efeito corona maxima:")
+perda_efeito_corona_label = tk.Label(janela, text="Perda por efeito corona máxima (kW/km):")
 perda_efeito_corona_label.grid(row=4, column=1, sticky="w")
 valor_entry = tk.StringVar(value="10")
 perda_efeito_corona_entry = tk.Entry(janela, textvariable=valor_entry)
 perda_efeito_corona_entry.grid(row=5, column=1)
 
-rendimento_minimo_label = tk.Label(janela, text="Rendimento minimo:")
+rendimento_minimo_label = tk.Label(janela, text="Rendimento mínimo (%):")
 rendimento_minimo_label.grid(row=6, column=1, sticky="w")
 valor_entry = tk.StringVar(value="93")
 rendimento_minimo_entry = tk.Entry(janela, textvariable=valor_entry)
 rendimento_minimo_entry.grid(row=7, column=1)
 
-previsao_aumento_carga_label = tk.Label(janela, text="Previsao aumento de carga:")
+previsao_aumento_carga_label = tk.Label(janela, text="Previsão aumento de carga (%):")
 previsao_aumento_carga_label.grid(row=8, column=1, sticky="w")
 valor_entry = tk.StringVar(value="20")
 previsao_aumento_carga_entry = tk.Entry(janela, textvariable=valor_entry)
